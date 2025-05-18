@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:runner_workout/database/dao.dart';
 import 'package:runner_workout/database/schema.dart';
+import 'package:runner_workout/workout_execution.dart';
 import '../utils/workout_calculator.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
@@ -56,6 +57,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
             ),
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.play_arrow),
+            onPressed: _startWorkout,
+            tooltip: 'Start Workout',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(
@@ -274,6 +282,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ),
         ),
       ],
+    );
+  }
+
+  void _startWorkout() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => WorkoutExecutionScreen(
+          workout: widget.workout,
+          blocks: _blocks,
+          steps: _steps,
+        ),
+      ),
     );
   }
 }

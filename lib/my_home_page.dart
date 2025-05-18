@@ -45,12 +45,6 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Workouts'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _refreshIndicatorKey.currentState?.show(),
-          ),
-        ],
       ),
       body: _workouts.isEmpty
           ? Center(

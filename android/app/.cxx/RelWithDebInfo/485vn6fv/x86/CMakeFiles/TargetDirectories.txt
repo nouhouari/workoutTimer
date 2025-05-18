@@ -1,0 +1,2 @@
+/Users/nourreddine/Projects/runner_workout/android/app/.cxx/RelWithDebInfo/485vn6fv/x86/CMakeFiles/edit_cache.dir
+/Users/nourreddine/Projects/runner_workout/android/app/.cxx/RelWithDebInfo/485vn6fv/x86/CMakeFiles/rebuild_cache.dir

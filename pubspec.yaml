@@ -1,5 +1,5 @@
 name: runner_workout
-description: "A new Flutter project."
+description: "Run block timer"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -39,6 +39,11 @@ dependencies:
   drift: ^2.26.1
   drift_flutter: ^0.2.4
   path_provider: ^2.1.5
+  flutter_tts: ^4.2.2
+  geolocator: ^14.0.0  # GPS location tracking
+  permission_handler: 11.4.0  # Request location permissions
+  pedometer: ^4.1.1
+  flutter_native_splash: ^2.4.6
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +57,13 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   drift_dev: ^2.26.1
   build_runner: ^2.4.15
+  flutter_launcher_icons: "^0.14.3"
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/icon.png"
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
