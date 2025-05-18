@@ -1,21 +1,65 @@
-# runner_workout
+# Runner Workout App
 
-A new Flutter project.
+A Flutter application designed for runners to track and manage their workouts effectively.
+
+## Features
+
+- **Workout Execution**: 
+  - Real-time speed tracking
+  - Distance measurement
+  - Step counting
+  - Pace comparison (current vs target)
+  - Visual feedback system for pace maintenance
+
+- **Workout Management**:
+  - Create and manage workout plans
+  - Define workout blocks with repeat counts
+  - Add steps with time or distance targets
+  - Calculate total workout duration and distance
+
+- **Performance Tracking**:
+  - GPS-based speed and distance tracking
+  - Pedometer-based step counting
+  - Visual indicators for pace maintenance
+  - Workout progress tracking
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
+- Flutter SDK (latest stable version)
+- Android Studio or VS Code
+- Physical device with GPS for testing
 
-A few resources to get you started if this is your first Flutter project:
+### Installation
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
+3. Generate launcher icons:
+   ```bash
+   flutter pub run flutter_launcher_icons:main
+   ```
+4. Run the app on your device:
+   ```bash
+   flutter run
+   ```
+### Usage
+   1. Create a new workout plan
+   2. Define workout blocks with repeat counts and steps.
+   3. Start the workout and track your progress.
+   4. View real-time speed, distance.
+   5. Compare your current pace to the target pace.
+   6. Receive visual feedback for pace maintenance.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Contributing
+  Contributions are welcome! Please follow these steps:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+1. Fork the repository
+2. Create your feature branch ( git checkout -b feature/AmazingFeature )
+3. Commit your changes ( git commit -m 'Add some AmazingFeature' )
+4. Push to the branch ( git push origin feature/AmazingFeature )
+5. Open a Pull Request
 
-Generate icons:
-```
-dart run flutter_launcher_icons:generate
-```
+## License
+This project is licensed under the MIT License.
