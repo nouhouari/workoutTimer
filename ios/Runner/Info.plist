@@ -64,10 +64,15 @@
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>processing</string>
+			<string>audio</string>
+			<string>location</string>
 		</array>
 		<key>BGTaskSchedulerPermittedIdentifiers</key>
 		<array>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 		</array>
+		<key>NSLocationAlwaysUsageDescription</key>
+		<string>This app needs access to location when in the background to track your running
+			workout.</string>
 	</dict>
 </plist>

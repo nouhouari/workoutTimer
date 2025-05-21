@@ -73,70 +73,138 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
   @override
   void initState() {
     super.initState();
-    _startListening();
+    // Don't automatically start listening - check permissions first
+    _checkAndStartListening();
+  }
+
+  Future<void> _checkAndStartListening() async {
+    final hasPermission = await _handlePermission();
+    if (hasPermission && mounted) {
+      _startListening();
+    } else if (mounted) {
+      // Show a message that GPS features won't work
+      setState(() {
+        _gpsAcquired = false;
+      });
+    }
+  }
+
+  Future<bool> _handlePermission() async {
+    try {
+      LocationPermission permission;
+      // Test if location services are enabled.
+      bool serviceEnabled =
+          await _geolocatorPlatform.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        // Location services are not enabled
+        return false;
+      }
+
+      permission = await _geolocatorPlatform.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await _geolocatorPlatform.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return false;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      // Handle any exceptions that might occur
+      print('Error checking location permission: $e');
+      return false;
+    }
+  }
+
+  Future<void> _startListening() async {
+    try {
+      final locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        // timeLimit: Duration(seconds: 1),
+        // distanceFilter: 1, // Update every 1 meter
+      );
+
+      _positionStream =
+          Geolocator.getPositionStream(locationSettings: locationSettings)
+              .listen(
+        (Position position) {
+          if (mounted) {
+            setState(() {
+              _gpsAcquired = true;
+              if (_lastPosition != null) {
+                _distance += Geolocator.distanceBetween(
+                  _lastPosition!.latitude,
+                  _lastPosition!.longitude,
+                  position.latitude,
+                  position.longitude,
+                );
+              }
+              // convert position.speed from m/s to km/h
+              _currentSpeed = position.speed * 3.6;
+              if (_currentSpeed < 0) {
+                _currentSpeed = 0;
+              }
+              _lastPosition = position;
+            });
+          }
+        },
+        onError: (error) {
+          // Handle stream errors gracefully
+          print('Location stream error: $error');
+          if (mounted) {
+            setState(() {
+              _gpsAcquired = false;
+            });
+
+            // Attempt to recreate the stream after a delay
+            // but only for certain types of errors
+            if (error
+                    .toString()
+                    .contains('Location services are not enabled') ||
+                error.toString().contains('Permission denied')) {
+              // For permission or service errors, wait longer before retry
+              Future.delayed(const Duration(seconds: 10), () {
+                if (mounted && !_isPaused && !_isStopped) {
+                  _checkAndStartListening();
+                }
+              });
+            } else {
+              // For other errors (like temporary GPS signal loss), retry sooner
+              Future.delayed(const Duration(seconds: 3), () {
+                if (mounted && !_isPaused && !_isStopped) {
+                  _startListening();
+                }
+              });
+            }
+          }
+        },
+      );
+    } catch (e) {
+      // Handle any exceptions that might occur when starting the stream
+      print('Error starting location stream: $e');
+      if (mounted) {
+        setState(() {
+          _gpsAcquired = false;
+        });
+
+        // Attempt to recreate the stream after a delay
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted && !_isPaused && !_isStopped) {
+            _checkAndStartListening();
+          }
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _positionStream?.cancel();
     super.dispose();
-  }
-
-  Future<bool> _handlePermission() async {
-    LocationPermission permission;
-    // Test if location services are enabled.
-    bool serviceEnabled = await _geolocatorPlatform.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      // Location services are not enabled don't continue
-      // accessing the position and request users of the
-      // App to enable the location services.
-      return false;
-    }
-
-    permission = await _geolocatorPlatform.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await _geolocatorPlatform.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  Future<void> _startListening() async {
-    final locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      // timeLimit: Duration(seconds: 1),
-      // distanceFilter: 1, // Update every 1 meter
-    );
-
-    final hasPermission = await _handlePermission();
-
-    if (!hasPermission) {
-      return;
-    }
-
-    _positionStream =
-        Geolocator.getPositionStream(locationSettings: locationSettings)
-            .listen((Position position) {
-      setState(() {
-        _gpsAcquired = true; // Add this line
-        if (_lastPosition != null) {
-          _distance += Geolocator.distanceBetween(
-            _lastPosition!.latitude,
-            _lastPosition!.longitude,
-            position.latitude,
-            position.longitude,
-          );
-        }
-        // convert position.speed from m/s to km/h
-        _currentSpeed = position.speed * 3.6;
-        if (_currentSpeed < 0) {
-          _currentSpeed = 0;
-        }
-        _lastPosition = position;
-      });
-    });
   }
 
   @override

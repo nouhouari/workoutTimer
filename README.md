@@ -38,12 +38,17 @@ A Flutter application designed for runners to track and manage their workouts ef
    ```
 3. Generate launcher icons:
    ```bash
-   flutter pub run flutter_launcher_icons:main
+   dart run flutter_launcher_icons:main
    ```
 4. Run the app on your device:
    ```bash
    flutter run
    ```
+5. Generate the splash screen:
+   ```bash
+   dart run flutter_native_splash:create
+   ```
+
 ### Usage
    1. Create a new workout plan
    2. Define workout blocks with repeat counts and steps.

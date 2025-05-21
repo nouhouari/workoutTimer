@@ -5,9 +5,9 @@ import 'package:runner_workout/database/schema.dart';
 import 'dart:async';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:runner_workout/speed_widget.dart';
-// import 'package:runner_workout/step_widget.dart';
 import 'package:runner_workout/utils/format_util.dart';
 import 'package:runner_workout/utils/workout_calculator.dart';
+import 'package:audio_session/audio_session.dart';
 
 class WorkoutExecutionScreen extends StatefulWidget {
   final WorkoutData workout;
@@ -25,21 +25,25 @@ class WorkoutExecutionScreen extends StatefulWidget {
   State<WorkoutExecutionScreen> createState() => _WorkoutExecutionScreenState();
 }
 
-class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
+class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
+    with WidgetsBindingObserver {
   bool _isRunning = false;
   bool _isPaused = false;
   int _currentStepIndex = 0;
   int _currentBlockIndex = 0;
   int _remainingTime = 0;
   int _totalRemainingTime = 0;
-  int _currentRepeatIndex = 0; // Add this line
+  int _currentRepeatIndex = 0;
   Timer? _timer;
+  DateTime? _pausedTime;
   List<StepData> _currentSteps = [];
   FlutterTts tts = FlutterTts();
 
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
     _calculateTotalRemainingTime();
     _currentSteps = widget.steps
         .where((step) => step.blockId == widget.blocks[_currentBlockIndex].id)
@@ -47,27 +51,73 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
     _initAudio();
   }
 
-  _initAudio() async {
-    if (Platform.isIOS) {
-      await tts.setSharedInstance(true);
-    }
-  }
-
-  void _calculateTotalRemainingTime() {
-    int total = 0;
-    for (final block in widget.blocks) {
-      final blockSteps = widget.steps.where((step) => step.blockId == block.id);
-      final blockDuration =
-          blockSteps.fold(0, (sum, step) => sum + _getStepDuration(step));
-      total += blockDuration * block.repeatCount;
-    }
-    _totalRemainingTime = total;
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // App is in background or screen is locked
+      _pausedTime = DateTime.now();
+    } else if (state == AppLifecycleState.resumed && _isRunning && !_isPaused) {
+      // App is back in foreground
+      if (_pausedTime != null) {
+        final elapsedSeconds =
+            DateTime.now().difference(_pausedTime!).inSeconds;
+        _adjustTimerAfterPause(elapsedSeconds);
+        _pausedTime = null;
+      }
+    }
+  }
+
+  void _adjustTimerAfterPause(int elapsedSeconds) {
+    setState(() {
+      // Adjust remaining time for current step
+      _remainingTime = _remainingTime - elapsedSeconds;
+      _totalRemainingTime = _totalRemainingTime - elapsedSeconds;
+
+      // If time went negative, move to next steps as needed
+      while (_remainingTime <= 0 && _isRunning) {
+        final overflowTime = -_remainingTime;
+        _moveToNextStep();
+        if (!_isRunning) break; // Workout ended
+        _remainingTime -= overflowTime;
+      }
+    });
+  }
+
+  _initAudio() async {
+    if (Platform.isIOS) {
+      await tts.setSharedInstance(true);
+      await tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        [
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker
+        ],
+      );
+
+      // Configure audio session for background playback
+      final session = await AudioSession.instance;
+      await session.configure(AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.mixWithOthers,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+      ));
+    } else if (Platform.isAndroid) {
+      await tts.setQueueMode(1); // Add to queue instead of interrupting
+      // await tts.setAudioAttributes(AudioAttributesAndroid.usage.alarm);
+    }
   }
 
   void _startTimer() {
@@ -85,6 +135,10 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
         }
       });
     });
+  }
+
+  Future<void> _speak(String text) async {
+    await tts.speak(text);
   }
 
   void _moveToNextStep() {
@@ -257,14 +311,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        // Text(
-                        //   widget.blocks[_currentBlockIndex].name,
-                        //   style:
-                        //       Theme.of(context).textTheme.titleLarge?.copyWith(
-                        //             color: Theme.of(context).primaryColor,
-                        //             fontWeight: FontWeight.bold,
-                        //           ),
-                        // ),
                         Text(
                           '${_currentRepeatIndex + 1} /${widget.blocks[_currentBlockIndex].repeatCount}',
                           style: TextStyle(fontWeight: FontWeight.bold),
@@ -272,13 +318,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    // Text(
-                    //   _currentSteps[_currentStepIndex].name,
-                    //   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    //         color: Colors.orange,
-                    //         fontWeight: FontWeight.bold,
-                    //       ),
-                    // ),
                     const SizedBox(height: 8),
                     Container(
                       decoration: decoration,
@@ -302,7 +341,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                         ],
                       ),
                     ),
-                    // const SizedBox(height: 8),
                     LinearProgressIndicator(
                       value: _getStepProgress(),
                       minHeight: 10,
@@ -312,55 +350,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    if (_currentSteps[_currentStepIndex].stepType == 'time')
-                      Row(
-                        children: [
-                          // Row(
-                          //   children: [
-                          //     Icon(Icons.timer, size: 16),
-                          //     const SizedBox(width: 4),
-                          //     Text(
-                          //       'Duration: ${FormatUtil.formatDuration(_currentSteps[_currentStepIndex].durationSeconds)}',
-                          //       style: Theme.of(context).textTheme.bodyMedium,
-                          //     ),
-                          //   ],
-                          // ),
-                          // Container(
-                          //   decoration: decoration,
-                          //   child: Padding(
-                          //     padding: const EdgeInsets.all(10.0),
-                          //     child: Column(children: [
-                          //       Text('Duration'),
-                          //       Text(
-                          //         FormatUtil.formatDuration(
-                          //             _currentSteps[_currentStepIndex]
-                          //                 .durationSeconds),
-                          //         style: style,
-                          //       )
-                          //     ]),
-                          //   ),
-                          // ),
-                          // Container(
-                          //   decoration: decoration,
-                          //   child: Padding(
-                          //     padding: const EdgeInsets.all(10.0),
-                          //     child: Column(
-                          //       children: [
-                          //         Text(
-                          //           'Target Speed',
-                          //         ),
-                          //         Text(
-                          //           FormatUtil.formatSpeed(
-                          //               _currentSteps[_currentStepIndex]
-                          //                   .targetSpeed),
-                          //           style: style,
-                          //         ),
-                          //       ],
-                          //     ),
-                          //   ),
-                          // ),
-                        ],
-                      ),
                     if (_currentSteps[_currentStepIndex].stepType == 'distance')
                       Row(
                         children: [
@@ -372,7 +361,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                           ),
                         ],
                       ),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -382,151 +370,10 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
                         )
                       ],
                     ),
-                    // Row(
-                    //   children: [
-                    //     Icon(Icons.speed, size: 16),
-                    //     const SizedBox(width: 4),
-                    //     Text(
-                    //       'Speed: ${FormatUtil.formatSpeed(_currentSteps[_currentStepIndex].targetSpeed)}',
-                    //       style: Theme.of(context).textTheme.bodyMedium,
-                    //     ),
-                    //   ],
-                    // ),
                   ],
                 ),
               ),
             ),
-            // if (_isRunning)
-            // Column(
-            //   children: [
-            //     Card(
-            //       margin: const EdgeInsets.all(16),
-            //       child: Padding(
-            //         padding: const EdgeInsets.all(16.0),
-            //         child: Column(
-            //           crossAxisAlignment: CrossAxisAlignment.start,
-            //           children: [
-            //             Row(
-            //               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            //               children: [
-            //                 Text(
-            //                   widget.blocks[_currentBlockIndex].name,
-            //                   style: Theme.of(context)
-            //                       .textTheme
-            //                       .titleLarge
-            //                       ?.copyWith(
-            //                         color: Theme.of(context).primaryColor,
-            //                         fontWeight: FontWeight.bold,
-            //                       ),
-            //                 ),
-            //                 Text(
-            //                     '${_currentRepeatIndex + 1} /${widget.blocks[_currentBlockIndex].repeatCount}'),
-            //               ],
-            //             ),
-
-            //             const SizedBox(height: 8),
-            //             Text(
-            //               _currentSteps[_currentStepIndex].name,
-            //               style: Theme.of(context)
-            //                   .textTheme
-            //                   .titleLarge
-            //                   ?.copyWith(
-            //                     color: Colors.orange,
-            //                     fontWeight: FontWeight.bold,
-            //                   ),
-            //             ),
-
-            //             const SizedBox(height: 8),
-            //             Row(
-            //               children: [
-            //                 Icon(Icons.timer, size: 16),
-            //                 const SizedBox(width: 4),
-            //                 Text(
-            //                   'Step Remaining Time: ${FormatUtil.formatDuration(_remainingTime)}',
-            //                   style: Theme.of(context).textTheme.bodyMedium,
-            //                 ),
-            //               ],
-            //             ),
-            //             const SizedBox(height: 8),
-            //             LinearProgressIndicator(
-            //               value: _getStepProgress(),
-            //               minHeight: 16, // Increased from 8
-            //               backgroundColor: Colors.grey[200],
-            //               valueColor: AlwaysStoppedAnimation<Color>(
-            //                 Theme.of(context).primaryColor,
-            //               ),
-            //             ),
-            //             const SizedBox(height: 24), // Increased from 16
-            //             if (_currentSteps[_currentStepIndex].stepType ==
-            //                 'time')
-            //               Row(
-            //                 children: [
-            //                   Icon(Icons.timer, size: 16),
-            //                   const SizedBox(width: 4),
-            //                   Text(
-            //                     'Duration: ${FormatUtil.formatDuration(_currentSteps[_currentStepIndex].durationSeconds)}',
-            //                     style: Theme.of(context).textTheme.bodyMedium,
-            //                   ),
-            //                 ],
-            //               ),
-            //             if (_currentSteps[_currentStepIndex].stepType ==
-            //                 'distance')
-            //               Row(
-            //                 children: [
-            //                   Icon(Icons.directions_run, size: 16),
-            //                   const SizedBox(width: 4),
-            //                   Text(
-            //                     'Distance: ${_currentSteps[_currentStepIndex].targetDistance}m',
-            //                     style: Theme.of(context).textTheme.bodyMedium,
-            //                   ),
-            //                 ],
-            //               ),
-            //             Row(
-            //               children: [
-            //                 Icon(Icons.speed, size: 16),
-            //                 const SizedBox(width: 4),
-            //                 Text(
-            //                   'Speed: ${FormatUtil.formatSpeed(_currentSteps[_currentStepIndex].targetSpeed)}',
-            //                   style: Theme.of(context).textTheme.bodyMedium,
-            //                 ),
-            //               ],
-            //             ),
-            //           ],
-            //         ),
-            //       ),
-            //     ),
-            //     if (!_isRunning)
-            //       Expanded(
-            //         child: ListView.builder(
-            //           itemCount: widget.blocks.length,
-            //           itemBuilder: (context, index) {
-            //             final block = widget.blocks[index];
-            //             return Card(
-            //               child: ExpansionTile(
-            //                 title: Text(block.name),
-            //                 children: widget.steps
-            //                     .where((step) => step.blockId == block.id)
-            //                     .map((step) => ListTile(
-            //                           title: Text(step.name),
-            //                           subtitle: Text(
-            //                             step.stepType == 'time'
-            //                                 ? 'Duration: ${FormatUtil.formatDuration(step.durationSeconds)}'
-            //                                 : 'Distance: ${step.targetDistance}m',
-            //                           ),
-            //                         ))
-            //                     .toList(),
-            //               ),
-            //             );
-            //           },
-            //         ),
-            //       ),
-            //   ],
-            // ),
-            // Container(
-            //   decoration: decoration,
-            //   child: const SpeedWidget(),
-            // ),
-            // const StepWidget(),
           ]),
         ),
         floatingActionButton: Column(
@@ -580,8 +427,14 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen> {
     return 1.0 - (_remainingTime / totalDuration);
   }
 
-  Future<void> _speak(String message) async {
-    await tts.setLanguage("en_US");
-    await tts.speak(message);
+  void _calculateTotalRemainingTime() {
+    setState(() {
+      _totalRemainingTime = _calculateTotalDuration();
+
+      // Set initial remaining time for the first step
+      if (_currentSteps.isNotEmpty) {
+        _remainingTime = _getStepDuration(_currentSteps[_currentStepIndex]);
+      }
+    });
   }
 }
