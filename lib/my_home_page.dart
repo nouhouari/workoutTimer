@@ -5,6 +5,7 @@ import 'package:runner_workout/database/dao.dart';
 import 'package:runner_workout/database/schema.dart';
 import 'package:runner_workout/workout_detail.dart';
 import '../utils/workout_calculator.dart';
+import 'package:drift/drift.dart' as drift;
 
 class WorkoutListScreen extends StatefulWidget {
   const WorkoutListScreen({super.key});
@@ -84,21 +85,82 @@ class _WorkoutListScreenState extends State<WorkoutListScreen> {
                   final workout = _workouts[index];
                   return Dismissible(
                     key: Key(workout.id.toString()),
-                    direction: DismissDirection.endToStart,
+                    direction: DismissDirection.horizontal,
                     background: Container(
+                      color: Colors.blue,
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: const Icon(
+                        Icons.copy,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    secondaryBackground: Container(
                       color: Colors.red,
                       alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(Icons.delete, color: Colors.white),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: const Icon(
+                        Icons.delete,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
+                    confirmDismiss: (direction) async {
+                      final removedWorkout = _workouts[index];
+                      final dao = _workoutDao;
+                      
+                      if (direction == DismissDirection.endToStart) {
+                        // Delete workflow
+                        return true; // Allow the dismissal
+                      } else if (direction == DismissDirection.startToEnd) {
+                        // Clone workflow - don't actually dismiss
+                        final clonedWorkoutId = await dao.cloneWorkout(removedWorkout.id);
+                        final clonedWorkout = await dao.getWorkout(clonedWorkoutId);
+                        
+                        if (mounted) {
+                          setState(() {
+                            if (clonedWorkout != null) {
+                              _workouts.insert(index + 1, clonedWorkout);
+                            }
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Cloned ${removedWorkout.name}')),
+                          );
+                        }
+                        return false; // Don't dismiss the original item
+                      }
+                      return false;
+                    },
                     onDismissed: (direction) async {
-                      await _workoutDao.deleteWorkout(workout.id);
-                      setState(() {
-                        _workouts.removeAt(index);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Deleted ${workout.name}')),
-                      );
+                      if (direction == DismissDirection.endToStart) {
+                        final removedWorkout = _workouts[index];
+                        final dao = _workoutDao;
+                        
+                        await dao.deleteWorkout(removedWorkout.id);
+                        if (mounted) {
+                          setState(() {
+                            _workouts.removeAt(index);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Deleted ${removedWorkout.name}'),
+                              action: SnackBarAction(
+                                label: 'Undo',
+                                onPressed: () async {
+                                  await dao.createWorkout(
+                                    WorkoutCompanion.insert(
+                                      name: removedWorkout.name,
+                                      description: drift.Value(removedWorkout.description),
+                                    ),
+                                  );
+                                  _loadWorkouts();
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      }
                     },
                     child: Card(
                       margin: const EdgeInsets.symmetric(

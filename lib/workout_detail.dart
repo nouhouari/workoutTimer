@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:runner_workout/add_workout.dart';
 import 'package:runner_workout/database/dao.dart';
 import 'package:runner_workout/database/schema.dart';
 import 'package:runner_workout/workout_execution.dart';
@@ -58,6 +59,23 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => AddWorkoutScreen(
+                    workout: widget.workout,
+                    blocks: _blocks,
+                    steps: _steps,
+                  ),
+                ),
+              ).then((_) {
+                _loadWorkoutDetails();
+              });
+            },
+            tooltip: 'Edit Workout',
+          ),
           IconButton(
             icon: const Icon(Icons.play_arrow),
             onPressed: _startWorkout,

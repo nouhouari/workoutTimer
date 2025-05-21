@@ -25,6 +25,8 @@ class WorkoutDao extends DatabaseAccessor<AppDatabase> with _$WorkoutDaoMixin {
   Future<int> createBlock(BlockCompanion companion) =>
       into(block).insert(companion);
 
+  Future<bool> updateBlock(BlockData data) => update(block).replace(data);
+
   Future<List<BlockData>> getBlocksByWorkoutId(int workoutId) => (select(block)
         ..where((b) => b.workoutId.equals(workoutId))
         ..orderBy([(b) => OrderingTerm(expression: b.order)]))
@@ -43,12 +45,18 @@ class WorkoutDao extends DatabaseAccessor<AppDatabase> with _$WorkoutDaoMixin {
       (update(block)..where((b) => b.id.equals(blockId)))
           .write(BlockCompanion(order: Value(newOrder)));
 
-  Future<int> deleteBlock(int id) =>
-      (delete(block)..where((b) => b.id.equals(id))).go();
+  Future<void> deleteBlock(int blockId) async {
+    // First delete all steps associated with this block
+    await (delete(step)..where((t) => t.blockId.equals(blockId))).go();
+    // Then delete the block itself
+    await (delete(block)..where((t) => t.id.equals(blockId))).go();
+  }
 
   // Step CRUD
   Future<int> createStep(StepCompanion companion) =>
       into(step).insert(companion);
+
+  Future<bool> updateStep(StepData data) => update(step).replace(data);
 
   Future<List<StepData>> getStepsForBlock(int blockId) => (select(step)
         ..where((s) => s.blockId.equals(blockId))
@@ -61,6 +69,48 @@ class WorkoutDao extends DatabaseAccessor<AppDatabase> with _$WorkoutDaoMixin {
 
   Future<int> deleteStep(int id) =>
       (delete(step)..where((s) => s.id.equals(id))).go();
+
+  // Workout Cloning
+  Future<int> cloneWorkout(int workoutId) async {
+    // Get the original workout
+    final original = await getWorkout(workoutId);
+    if (original == null) throw Exception('Workout not found');
+
+    // Create new workout
+    final newWorkoutId = await createWorkout(WorkoutCompanion.insert(
+      name: '${original.name} (Copy)',
+      description: Value(original.description),
+      createdAt: Value(DateTime.now()),
+    ));
+
+    // Get and clone blocks
+    final blocks = await getBlocksByWorkoutId(workoutId);
+    for (final block in blocks) {
+      final newBlockId = await createBlock(BlockCompanion.insert(
+        name: block.name,
+        workoutId: newWorkoutId,
+        order: block.order,
+        repeatCount: Value(block.repeatCount),
+      ));
+
+      // Get and clone steps
+      final steps = await getStepsForBlock(block.id);
+      for (final step in steps) {
+        await createStep(StepCompanion.insert(
+          name: step.name,
+          stepType: step.stepType,
+          blockId: newBlockId,
+          order: step.order,
+          durationSeconds: step.durationSeconds,
+          targetSpeed: Value(step.targetSpeed),
+          targetDistance: Value(step.targetDistance),
+          orderIndex: step.orderIndex,
+        ));
+      }
+    }
+
+    return newWorkoutId;
+  }
 
   // Bulk operations
   Future<void> reorderBlocks(List<int> newOrder) async {

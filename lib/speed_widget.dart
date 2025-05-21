@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -130,8 +129,9 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
             position.longitude,
           );
         }
-        _currentSpeed = position.speed;
-        if (_currentSpeed < 1) {
+        // convert position.speed from m/s to km/h
+        _currentSpeed = position.speed * 3.6;
+        if (_currentSpeed < 0) {
           _currentSpeed = 0;
         }
         _lastPosition = position;
@@ -220,9 +220,9 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
   }
 
   Color? _getIconColor(int index) {
-    // Convert speeds to min/km
-    final currentPace = _currentSpeed > 0 ? 1000 / _currentSpeed : 0;
-    final targetPace = widget.targetSpeed > 0 ? 1000 / widget.targetSpeed : 0;
+    // Convert speeds from km/h to min/km
+    final currentPace = _currentSpeed > 0 ? 3600 / _currentSpeed : 0;
+    final targetPace = widget.targetSpeed > 0 ? 3600 / widget.targetSpeed : 0;
     final paceDifference = currentPace - targetPace;
 
     if (paceDifference >= -5 && paceDifference <= 5) {

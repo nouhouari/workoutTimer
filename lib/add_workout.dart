@@ -9,7 +9,16 @@ import 'package:runner_workout/database/schema.dart';
 import '../utils/workout_calculator.dart';
 
 class AddWorkoutScreen extends StatefulWidget {
-  const AddWorkoutScreen({super.key});
+  final schema.WorkoutData? workout;
+  final List<schema.BlockData>? blocks;
+  final List<schema.StepData>? steps;
+
+  const AddWorkoutScreen({
+    super.key,
+    this.workout,
+    this.blocks,
+    this.steps,
+  });
 
   @override
   State<AddWorkoutScreen> createState() => _AddWorkoutScreenState();
@@ -17,10 +26,20 @@ class AddWorkoutScreen extends StatefulWidget {
 
 class _AddWorkoutScreenState extends State<AddWorkoutScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final List<schema.BlockData> _blocks = [];
-  final List<schema.StepData> _steps = [];
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  late List<schema.BlockData> _blocks;
+  late List<schema.StepData> _steps;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.workout?.name ?? '');
+    _descriptionController =
+        TextEditingController(text: widget.workout?.description ?? '');
+    _blocks = widget.blocks?.toList() ?? [];
+    _steps = widget.steps?.toList() ?? [];
+  }
 
   @override
   void dispose() {
@@ -31,7 +50,6 @@ class _AddWorkoutScreenState extends State<AddWorkoutScreen> {
 
   Future<void> _saveWorkout() async {
     if (_formKey.currentState!.validate()) {
-      // Add name validation
       if (_nameController.text.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -41,48 +59,148 @@ class _AddWorkoutScreenState extends State<AddWorkoutScreen> {
         return;
       }
 
-      log('Saving workout with ${_blocks.length} blocks and ${_steps.length} steps');
       final db = Provider.of<AppDatabase>(context, listen: false);
       final dao = WorkoutDao(db);
+      int? workoutId;
 
-      // Save workout
-      final workoutId = await dao.createWorkout(
-        WorkoutCompanion.insert(
-          name: _nameController.text,
-          description: drift.Value(_descriptionController.text),
-        ),
-      );
-      log('Created workout with ID: $workoutId');
+      if (widget.workout == null) {
+        // Create new workout
+        workoutId = await dao.createWorkout(
+          WorkoutCompanion.insert(
+            name: _nameController.text,
+            description: drift.Value(_descriptionController.text),
+          ),
+        );
+        log('Created workout with ID: $workoutId');
+        // Save blocks and steps...
+      } else {
+        workoutId = widget.workout!.id;
+        // Update existing workout
+        await dao.updateWorkout(
+          widget.workout!.copyWith(
+            name: _nameController.text,
+            description: drift.Value(_descriptionController.text),
+            updatedAt: drift.Value(DateTime.now()),
+          ),
+        );
+        // Update blocks and steps...
+        log('Update workout with ID: $workoutId');
+      }
+      log('Saving workout with ${_blocks.length} blocks and ${_steps.length} steps');
+
+      // First, get existing blocks to determine which ones to update vs. create
+      List<BlockData> existingBlocks = [];
+      if (widget.workout != null) {
+        existingBlocks = await dao.getBlocksByWorkoutId(widget.workout!.id);
+      }
+
+      // Delete blocks that were removed from the UI
+      if (widget.workout != null) {
+        for (final existingBlock in existingBlocks) {
+          if (!_blocks.any((b) => b.id == existingBlock.id)) {
+            // This block was deleted in the UI, so delete it from the database
+            await dao.deleteBlock(existingBlock.id);
+            log('Deleted block with ID: ${existingBlock.id}');
+          }
+        }
+      }
+
+      // Get existing steps to determine which ones to delete
+      List<StepData> existingSteps = [];
+      if (widget.workout != null) {
+        existingSteps = await dao.getStepsByWorkoutId(widget.workout!.id);
+
+        // Delete steps that were removed from the UI
+        for (final existingStep in existingSteps) {
+          if (!_steps.any((s) => s.id == existingStep.id)) {
+            // This step was deleted in the UI, so delete it from the database
+            await dao.deleteStep(existingStep.id);
+            log('Deleted step with ID: ${existingStep.id}');
+          }
+        }
+      }
 
       // Save blocks
       for (final block in _blocks) {
         log('Saving block: ${block.name} with ${_steps.where((s) => s.blockId == block.id).length} steps');
-        final blockId = await dao.createBlock(
-          BlockCompanion.insert(
-            name: block.name,
-            workoutId: workoutId,
-            order: block.order,
-            repeatCount: drift.Value(block.repeatCount),
-          ),
-        );
-        log('Created block with ID: $blockId');
+
+        int blockId;
+        if (widget.workout == null) {
+          // Create new block
+          blockId = await dao.createBlock(
+            BlockCompanion.insert(
+              name: block.name,
+              workoutId: workoutId,
+              order: block.order,
+              repeatCount: drift.Value(block.repeatCount),
+            ),
+          );
+          log('Created block with ID: $blockId');
+        } else {
+          // For existing workout, check if this is an existing block or new block
+          bool isExistingBlock = existingBlocks.any((b) => b.id == block.id);
+
+          if (isExistingBlock) {
+            // Update existing block
+            blockId = block.id;
+            await dao.updateBlock(block.copyWith(
+              name: block.name,
+              workoutId: workoutId,
+              order: block.order,
+              repeatCount: block.repeatCount,
+            ));
+            log('Updated block with ID: $blockId');
+          } else {
+            // Create new block for existing workout
+            blockId = await dao.createBlock(
+              BlockCompanion.insert(
+                name: block.name,
+                workoutId: workoutId,
+                order: block.order,
+                repeatCount: drift.Value(block.repeatCount),
+              ),
+            );
+            log('Created new block with ID: $blockId for existing workout');
+          }
+        }
 
         // Save steps for each block
         final steps = _steps.where((s) => s.blockId == block.id).toList();
         for (final step in steps) {
-          log('Saving step: ${step.name} (type: ${step.stepType})');
-          await dao.createStep(
-            StepCompanion.insert(
+          log('Saving step: ${step.name} (type: ${step.stepType}) for block ID: $blockId');
+
+          // Check if this is an existing step
+          bool isExistingStep = existingSteps.any((s) => s.id == step.id);
+
+          if (!isExistingStep) {
+            // Create new step
+            await dao.createStep(
+              StepCompanion.insert(
+                name: step.name,
+                stepType: step.stepType,
+                blockId: blockId, // Use the blockId from the database
+                order: step.order,
+                durationSeconds: step.durationSeconds,
+                targetSpeed: drift.Value(step.targetSpeed),
+                targetDistance: drift.Value(step.targetDistance),
+                orderIndex: step.orderIndex,
+              ),
+            );
+            log('Created new step with name: ${step.name} for block ID: $blockId');
+          } else {
+            // Update existing step
+            await dao.updateStep(step.copyWith(
               name: step.name,
               stepType: step.stepType,
-              blockId: blockId,
+              blockId: blockId, // Use the blockId from the database
               order: step.order,
               durationSeconds: step.durationSeconds,
               targetSpeed: drift.Value(step.targetSpeed),
               targetDistance: drift.Value(step.targetDistance),
               orderIndex: step.orderIndex,
-            ),
-          );
+            ));
+            log('Updated existing step with ID: ${step.id} for block ID: $blockId');
+          }
         }
       }
 
@@ -120,7 +238,7 @@ class _AddWorkoutScreenState extends State<AddWorkoutScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                initialValue: _descriptionController.text,
+                controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description',
                 ),
