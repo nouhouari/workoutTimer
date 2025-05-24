@@ -1,16 +1,18 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:runner_workout/playable.dart';
 import 'package:runner_workout/utils/format_util.dart';
+import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
 
 class SpeedWidget extends StatefulWidget {
-  final double targetSpeed; // Add this line
+  final double targetSpeed;
 
-  const SpeedWidget({super.key, required this.targetSpeed}); // Modify this line
+  const SpeedWidget({super.key, required this.targetSpeed});
 
   @override
   State<SpeedWidget> createState() => _SpeedWidgetState();
@@ -18,12 +20,18 @@ class SpeedWidget extends StatefulWidget {
 
 class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
   double _currentSpeed = 0.0;
+  double _averageSpeed = 0.0; // Added for average speed
   double _distance = 0.0;
   Position? _lastPosition;
   StreamSubscription<Position>? _positionStream;
   bool _gpsAcquired = false;
   bool _isPaused = false;
   bool _isStopped = true;
+
+  // Queue to store the last 10 seconds of speed readings
+  final Queue<SpeedReading> _speedReadings = Queue<SpeedReading>();
+  // How many seconds of history to keep
+  final int _averagingPeriod = 10;
 
   @override
   void start() {
@@ -42,7 +50,9 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
       _isStopped = true;
       _isPaused = false;
       _currentSpeed = 0.0;
+      _averageSpeed = 0.0; // Reset average speed
       _distance = 0.0;
+      _speedReadings.clear(); // Clear speed history
     });
   }
 
@@ -148,6 +158,13 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
               if (_currentSpeed < 0) {
                 _currentSpeed = 0;
               }
+
+              // Add current speed to history with timestamp
+              _addSpeedReading(_currentSpeed);
+
+              // Calculate average speed
+              _calculateAverageSpeed();
+
               _lastPosition = position;
             });
           }
@@ -201,6 +218,34 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
     }
   }
 
+  // Add a new speed reading to the queue
+  void _addSpeedReading(double speed) {
+    final now = DateTime.now();
+    _speedReadings.add(SpeedReading(speed: speed, timestamp: now));
+
+    // Remove readings older than _averagingPeriod seconds
+    while (_speedReadings.isNotEmpty &&
+        now.difference(_speedReadings.first.timestamp).inSeconds >
+            _averagingPeriod) {
+      _speedReadings.removeFirst();
+    }
+  }
+
+  // Calculate the average speed from the readings in the queue
+  void _calculateAverageSpeed() {
+    if (_speedReadings.isEmpty) {
+      _averageSpeed = 0.0;
+      return;
+    }
+
+    double sum = 0.0;
+    for (var reading in _speedReadings) {
+      sum += reading.speed;
+    }
+
+    _averageSpeed = sum / _speedReadings.length;
+  }
+
   @override
   void dispose() {
     _positionStream?.cancel();
@@ -221,19 +266,20 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
                 Icons.gps_fixed,
                 color: _gpsAcquired ? Colors.green : Colors.grey,
               ),
-              const SizedBox(width: 8),
-              Text(
-                _gpsAcquired ? 'GPS Acquired' : 'Acquiring GPS...',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              // const SizedBox(width: 8),
+              // Text(
+              //   _gpsAcquired ? 'GPS Acquired' : 'Acquiring GPS...',
+              //   style: Theme.of(context).textTheme.bodyMedium,
+              // ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Text(
             'Current Speed',
           ),
           Text(
-            FormatUtil.formatSpeed(_currentSpeed),
+            FormatUtil.formatSpeed(
+                _averageSpeed), // Use average speed instead of current
             style: style,
           ),
           const SizedBox(height: 8),
@@ -244,38 +290,12 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
             FormatUtil.formatSpeed(widget.targetSpeed),
             style: style,
           ),
+          const SizedBox(height: 10),
+          // Replace icons with a speed indicator bar
+          _buildSpeedIndicator(context),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.run_circle,
-                size: 32,
-                color: _getIconColor(0),
-              ),
-              Icon(
-                Icons.run_circle,
-                size: 32,
-                color: _getIconColor(1),
-              ),
-              Icon(
-                Icons.run_circle,
-                size: 32,
-                color: _getIconColor(2),
-              ),
-              Icon(
-                Icons.run_circle,
-                size: 32,
-                color: _getIconColor(3),
-              ),
-              Icon(
-                Icons.run_circle,
-                size: 32,
-                color: _getIconColor(4),
-              ),
-            ],
-          ),
           Text(
-            'Distance',
+            'Current Distance',
             // style: style,
           ),
           Text(
@@ -287,23 +307,74 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
     );
   }
 
-  Color? _getIconColor(int index) {
-    // Convert speeds from km/h to min/km
-    final currentPace = _currentSpeed > 0 ? 3600 / _currentSpeed : 0;
+  // New method to build the speed indicator with cursor and color bar
+  Widget _buildSpeedIndicator(BuildContext context) {
+    final currentPace = _averageSpeed > 0 ? 3600 / _averageSpeed : 0;
     final targetPace = widget.targetSpeed > 0 ? 3600 / widget.targetSpeed : 0;
     final paceDifference = currentPace - targetPace;
 
-    if (paceDifference >= -5 && paceDifference <= 5) {
-      return index == 2 ? Colors.green : Colors.grey;
-    } else if (paceDifference > 5 && paceDifference <= 10) {
-      return index == 3 ? Colors.red[200] : Colors.grey;
-    } else if (paceDifference > 10) {
-      return index == 4 ? Colors.red[400] : Colors.grey;
-    } else if (paceDifference < -5 && paceDifference >= -10) {
-      return index == 1 ? Colors.blue[200] : Colors.grey;
-    } else if (paceDifference < -10) {
-      return index == 0 ? Colors.blue : Colors.grey;
-    }
-    return Colors.grey;
+    return SizedBox(
+      width: 200,
+      height: 200,
+      child: SfRadialGauge(
+        axes: [
+          RadialAxis(
+            minimum: -20,
+            maximum: 20,
+            ranges: [
+              GaugeRange(
+                startValue: -20,
+                endValue: -10,
+                color: Colors.blue,
+                label: 'Very Slow',
+              ),
+              GaugeRange(
+                startValue: -5,
+                endValue: -10,
+                color: Colors.blue[200],
+                label: 'Slow',
+              ),
+              GaugeRange(
+                startValue: -5,
+                endValue: 5,
+                color: Colors.green,
+                label: 'Good',
+              ),
+              GaugeRange(
+                startValue: 5,
+                endValue: 10,
+                color: Colors.red[200],
+                label: 'Fast',
+              ),
+              GaugeRange(
+                startValue: 10,
+                endValue: 20,
+                color: Colors.red,
+                label: 'Very Fast',
+              ),
+            ],
+            pointers: [
+              NeedlePointer(
+                value: paceDifference.clamp(-20, 20).toDouble(),
+                needleColor: Colors.black54,
+                needleLength: 0.8,
+                knobStyle: KnobStyle(
+                  knobRadius: 0.1,
+                  color: Colors.black,
+                ),
+              )
+            ],
+          )
+        ],
+      ),
+    );
   }
+}
+
+// Class to store speed readings with timestamps
+class SpeedReading {
+  final double speed;
+  final DateTime timestamp;
+
+  SpeedReading({required this.speed, required this.timestamp});
 }

@@ -8,6 +8,7 @@ import 'package:runner_workout/speed_widget.dart';
 import 'package:runner_workout/utils/format_util.dart';
 import 'package:runner_workout/utils/workout_calculator.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class WorkoutExecutionScreen extends StatefulWidget {
   final WorkoutData workout;
@@ -39,6 +40,14 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
   List<StepData> _currentSteps = [];
   FlutterTts tts = FlutterTts();
 
+  // Add FlutterLocalNotificationsPlugin
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  // Add notification IDs
+  final int _timerNotificationId = 1;
+  bool _notificationsInitialized = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,13 +58,60 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
         .where((step) => step.blockId == widget.blocks[_currentBlockIndex].id)
         .toList();
     _initAudio();
+    _initNotifications();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    flutterLocalNotificationsPlugin.cancel(_timerNotificationId);
     super.dispose();
+  }
+
+  // Initialize notifications
+  Future<void> _initNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    final DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse:
+          (NotificationResponse notificationResponse) async {
+        // Handle notification tap
+        final String? payload = notificationResponse.payload;
+        if (payload != null) {
+          // Handle the payload if needed
+        }
+      },
+    );
+
+    // Request permission for iOS
+    if (Platform.isIOS) {
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+    }
+
+    _notificationsInitialized = true;
   }
 
   @override
@@ -63,6 +119,9 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
     if (state == AppLifecycleState.paused) {
       // App is in background or screen is locked
       _pausedTime = DateTime.now();
+      if (_isRunning && !_isPaused) {
+        _showOngoingNotification();
+      }
     } else if (state == AppLifecycleState.resumed && _isRunning && !_isPaused) {
       // App is back in foreground
       if (_pausedTime != null) {
@@ -71,6 +130,64 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
         _adjustTimerAfterPause(elapsedSeconds);
         _pausedTime = null;
       }
+      // Remove notification when app is in foreground
+      flutterLocalNotificationsPlugin.cancel(_timerNotificationId);
+    }
+  }
+
+  // Show ongoing notification with timer
+  Future<void> _showOngoingNotification() async {
+    if (!_notificationsInitialized) return;
+
+    final AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'workout_timer_channel',
+      'Workout Timer',
+      channelDescription: 'Shows the ongoing workout timer',
+      importance: Importance.high,
+      priority: Priority.high,
+      ongoing: true,
+      autoCancel: false,
+      category: AndroidNotificationCategory.service,
+      actions: <AndroidNotificationAction>[
+        AndroidNotificationAction('pause', 'Pause'),
+        AndroidNotificationAction('resume', 'Resume'),
+      ],
+    );
+
+    final DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: false,
+      interruptionLevel: InterruptionLevel.active,
+    );
+
+    final NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+
+    // Get current step name
+    String stepName = "";
+    if (_currentSteps.isNotEmpty && _currentStepIndex < _currentSteps.length) {
+      stepName = _currentSteps[_currentStepIndex].name ?? "Current Step";
+    }
+
+    await flutterLocalNotificationsPlugin.show(
+      _timerNotificationId,
+      widget.workout.name,
+      'Running: $stepName - ${FormatUtil.formatDuration(_remainingTime)}',
+      platformChannelSpecifics,
+    );
+
+    // Update notification every 5 seconds
+    if (_isRunning && !_isPaused) {
+      Future.delayed(const Duration(seconds: 5), () {
+        if (_isRunning && !_isPaused) {
+          _showOngoingNotification();
+        }
+      });
     }
   }
 
@@ -135,6 +252,11 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
         }
       });
     });
+
+    // Show notification when timer starts
+    if (_isRunning && !_isPaused) {
+      _showOngoingNotification();
+    }
   }
 
   Future<void> _speak(String text) async {
@@ -317,8 +439,6 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const SizedBox(height: 8),
                     Container(
                       decoration: decoration,
                       child: Column(
@@ -356,7 +476,7 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
                           Icon(Icons.directions_run, size: 16),
                           const SizedBox(width: 4),
                           Text(
-                            'Distance: ${_currentSteps[_currentStepIndex].targetDistance}m',
+                            'Step Distance: ${_currentSteps[_currentStepIndex].targetDistance}m',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ],
