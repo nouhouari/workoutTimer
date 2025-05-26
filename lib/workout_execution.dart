@@ -431,14 +431,16 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          '${_currentRepeatIndex + 1} /${widget.blocks[_currentBlockIndex].repeatCount}',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          '${_currentRepeatIndex + 1}/${widget.blocks[_currentBlockIndex].repeatCount}',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 26),
                         ),
                       ],
                     ),
+                    SizedBox(height: 16),
                     Container(
                       decoration: decoration,
                       child: Column(
@@ -477,6 +479,17 @@ class _WorkoutExecutionScreenState extends State<WorkoutExecutionScreen>
                           const SizedBox(width: 4),
                           Text(
                             'Step Distance: ${_currentSteps[_currentStepIndex].targetDistance}m',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    if (_currentSteps[_currentStepIndex].stepType == 'time')
+                      Row(
+                        children: [
+                          Icon(Icons.timer, size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Step Speed: ${FormatUtil.formatSpeed(_currentSteps[_currentStepIndex].targetSpeed)}',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ],

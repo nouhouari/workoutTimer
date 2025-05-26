@@ -311,7 +311,10 @@ class _SpeedWidgetState extends State<SpeedWidget> implements Playable {
   Widget _buildSpeedIndicator(BuildContext context) {
     final currentPace = _averageSpeed > 0 ? 3600 / _averageSpeed : 0;
     final targetPace = widget.targetSpeed > 0 ? 3600 / widget.targetSpeed : 0;
-    final paceDifference = currentPace - targetPace;
+    var paceDifference = targetPace - currentPace;
+    if (currentPace <= 0) {
+      paceDifference = -20;
+    }
 
     return SizedBox(
       width: 200,
